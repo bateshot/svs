@@ -1,0 +1,294 @@
+<canvas id="canvas" width="500" height="300"></canvas>
+<style>
+	#canvas {
+		border: 1px solid gray;
+	}
+</style>
+
+<script>
+	var canvas = document.getElementById('canvas');
+	var ctx = canvas.getContext('2d');
+
+	//Board settings
+	var board = {
+		x: 50,
+		y: 30
+	}
+
+	var scale = 10;
+
+	//Game settings
+	var difficulty = 0.5;
+	var players = [];
+	var speed = 1;
+
+
+	//The Snake starts here
+	function Snake (baseColor, neckColor, difficulty) {
+		this.isBot = !!difficulty;
+		this.difficulty = this.isBot ? difficulty : undefined;
+		this.x = Math.floor(Math.random() * board.x);
+		this.y = Math.floor(Math.random() * board.y);
+		this.baseColor = baseColor;
+		this.neckColor = neckColor;
+		this.size = 4;
+		this.isDominant = false;
+		this.tail = [];
+
+		for (var i = 0; i < this.size; i++) 
+			this.tail.push({x: this.x, y: this.y});
+
+		this.speed = {
+			x: 0,
+			y: 0
+		}
+	}
+
+	Snake.prototype.direction = function () {
+		if (this.speed.y < 0) return 'u';
+		if (this.speed.x > 0) return 'r';
+		if (this.speed.y > 0) return 'd';
+		if (this.speed.x < 0) return 'l';
+
+		return 'still';
+	};
+
+	Snake.prototype.turn = function(direction) {
+		var currentD = this.direction();
+		if (direction ===  currentD || directionsAreOpposite(direction, currentD)) return;
+
+		switch (direction) {
+		case 'u':
+			this.speed.y = speed * -1;
+			this.speed.x = 0;
+			break;
+		case 'r':
+			this.speed.y = 0;
+			this.speed.x = speed;
+			break;
+		case 'd':
+			this.speed.y = speed;
+			this.speed.x = 0;
+			break;
+		case 'l':
+			this.speed.y = 0;
+			this.speed.x = speed * -1;
+			break;
+		}
+	};
+
+	Snake.prototype.reposition = function () {
+		var newx = this.tail[0].x + this.speed.x;
+		var newy = this.tail[0].y + this.speed.y
+
+		// warping logic
+		newx > board.x - 1 ? newx = 0 : newx = newx;
+		newx < 0 ? newx = board.x - 1 : newx = newx;
+
+		newy > board.x - 1 ? newy = 0 : newy = newy;
+		newy < 0 ? newy = board.x - 1 : newy = newy;
+
+		this.tail.pop();
+		this.tail.unshift({
+			x: newx,
+			y: newy
+		});
+	}
+
+	Snake.prototype.isBitten = function (point) {
+		var link;
+
+		for (var i = 1; i < this.tail.length; i++) {
+			link = this.tail[i];
+			if (point.x === link.x && point.y === link.y){
+				if (this.isDominant && i === 1) return false;
+				else {
+					this.cutTail(i);
+					return i;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	Snake.prototype.cutTail = function (i) {
+		this.tail.splice(i);
+		this.size = i;
+	};
+
+	function directionsAreOpposite (d1, d2) {
+		if( d1 === 'u' && d2 === 'd' ||
+			d1 === 'd' && d2 === 'u' ||
+			d1 === 'l' && d2 === 'r' ||
+			d1 === 'r' && d2 === 'l' ) return true;
+		else
+			return false;
+	}
+
+	Snake.prototype.draw = function (context){
+		context.fillStyle = this.neckColor;
+
+		this.tail.forEach((link, index)=> {
+			if(index < 3) {
+				context.fillRect( link.x * scale, link.y * scale, 10, 10);
+				
+			} else {
+				context.fillStyle = this.baseColor;
+				context.fillRect( link.x * scale, link.y * scale, 10, 10);
+			}
+
+			if(this.isDominant) {
+				context.strokeStyle = '#000000';
+				context.strokeRect( link.x * scale, link.y * scale, 10, 10);
+			}
+		});
+	}
+
+	Snake.prototype.grow = function () {
+		var last = this.tail[this.tail.length - 1];
+		this.size += 1;
+
+		this.tail.push({
+			x: last.x,
+			y: last.y
+		});
+	};
+
+
+	//Food starts here:
+	function newOrange () {
+		return {
+			x: Math.floor(Math.random() * board.x),
+			y: Math.floor(Math.random() * board.y)
+		};
+	}
+
+	function Food () {
+		this.oranges = []
+
+		this.oranges.push(newOrange());
+		this.oranges.push(newOrange());
+		this.oranges.push(newOrange());
+		this.oranges.push(newOrange());
+	}
+
+	Food.prototype.newOrange = function(){
+		this.oranges.push(newOrange());
+	};
+
+	Food.prototype.isEaten = function (point) {
+		var o;
+		for (var i = 0; i < this.oranges.length; i++) {
+			o = this.oranges[i];
+
+			if (o.x === point.x && o.y === point.y) {
+				this.oranges.splice(i, 1);
+				return true;
+			}
+
+		}
+
+		return false;
+	};
+
+	Food.prototype.draw = function (context) {
+
+		this.oranges.forEach(orange =>{
+			context.beginPath();
+			context.arc(orange.x * scale + scale/2, orange.y * scale + scale/2, scale / 2, 0, 2 * Math.PI, false);
+			context.fillStyle = '#ffb600'
+			context.fill();
+			context.lineWidth = 2;
+			context.strokeStyle = '#ffb600';
+			context.stroke();
+		});
+	};
+
+
+	function newGame () {
+		var players = [];
+		var food = new Food();
+
+		document.onkeydown = checkKey;
+
+
+		players.push(new Snake('#0bed35', '#135105', false));
+		players.push(new Snake('#fc1b1b', '#6d0202', false));
+
+
+		function checkKey(e) {
+
+			e = e || window.event;
+
+			if (e.keyCode == '38') {
+				players[0].turn('u');
+			}
+			else if (e.keyCode == '40') {
+				players[0].turn('d');
+			}
+			else if (e.keyCode == '37') {
+				players[0].turn('l');
+			}
+			else if (e.keyCode == '39') {
+				players[0].turn('r');
+			}
+			else if (e.keyCode == '87') {
+				players[1].turn('u');
+			}
+			else if (e.keyCode == '83') {
+				players[1].turn('d');
+			}
+			else if (e.keyCode == '65') {
+				players[1].turn('l');
+			}
+			else if (e.keyCode == '68') {
+				players[1].turn('r');
+			}
+		}
+
+
+		setInterval(()=>{
+			ctx.clearRect(0, 0, board.x * scale, board.y * scale );
+
+			food.draw(ctx);
+
+			players.forEach(p => {
+				p.reposition();
+				p.draw(ctx);
+
+				players.forEach((nPl, playerIndex)=> {
+					var biteIndex = p.isBitten(nPl.tail[0])
+					if(biteIndex) {
+						if(nPl.isDominant && biteIndex < 3)
+							alert((playerIndex === 0 ? 'Green' : 'Red') + ' player wins!');
+					}
+				});
+
+				if(food.isEaten(p.tail[0])){
+					food.newOrange();
+					p.grow();
+				}
+			});
+			checkDominant(players);
+
+		}, 100);
+
+	}
+
+	function checkDominant (arr) {
+		if (arr[0].size > arr[1].size) {
+			arr[0].isDominant = true;
+			arr[1].isDominant = false;
+		} else if(arr[0].size < arr[1].size) {
+			arr[0].isDominant = false;
+			arr[1].isDominant = true;
+		} else {
+			arr[0].isDominant = false;
+			arr[1].isDominant = false;			
+		}
+	}
+
+	newGame();
+
+</script>
